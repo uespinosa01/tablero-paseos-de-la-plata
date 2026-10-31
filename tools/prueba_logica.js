@@ -25,5 +25,14 @@ assert.strictEqual(leerCasa("Real de minas #603", calles).calle, "Real de Minas"
 assert.strictEqual(leerCasa("Citrino #145 despues de 8pm", calles).hora, "8:00 pm");
 assert.strictEqual(leerCasa("Citrino #145 despues de 8pm", calles).calle, "Citrino");
 assert.ok(nombres(buscarCalles("citrino", calles).exactas).includes("Citrino"), "Citrino confirmada por el usuario");
+const leidos = (archivo) => fs.readFileSync(path.join(__dirname, "../datos", archivo), "utf8").trim().split(/\r?\n/).slice(1)
+  .map((l) => l.split(",").pop()).filter((n) => n !== "-");
+for (const n of new Set([...leidos("etiquetas.csv"), ...leidos("etiquetas_auditoria.csv")])) {
+  assert.ok(nombres(calles).includes(n), `nombre confirmado perdido: ${n}`);
+}
+assert.ok(nombres(calles).includes("Ágata"), "Ágata hallada en la auditoria");
+assert.ok(nombres(calles).includes("Las Beolas"), "Beolas sustituye a la lectura erronea Brecia");
+assert.ok(!nombres(calles).includes("Brecia"), "Brecia no debe quedar");
+assert.ok(!nombres(calles).includes("-"), "el marcador de sin nombre no llega a la app");
 assert.strictEqual(leerCasa("   ", calles), null);
 console.log("logica OK");

@@ -21,6 +21,10 @@ OSM_A_GOOGLE = {"Arcillas": "Las Arcillas", "Canteras": "Las Canteras (Paseo)", 
 ANGULO_RECTO_MAX = 28
 DIST_SNAP_M = 28
 LARGO_MAX_SIN_NOMBRE_M = 250
+DIST_SNAP_AUDITORIA_M = 15
+CENTRO_AUDITORIA = (337, 149.5)
+VIAS_AJENAS = {1265010752, 850218347}  # Caminos al poniente, fuera del fraccionamiento.
+SIN_NOMBRE = "-"  # Google no lo rotula ni al maximo acercamiento: se marca para que nada lo herede.
 
 
 def base_osm(nombre):
@@ -41,6 +45,12 @@ def dentro(lat, lon):
 def etiqueta_a_coord(z, clat, clon, x, y):
     grados_px = 360 / (256 * 2 ** z) * 1.5
     return clat - (y - 300) * grados_px * math.cos(math.radians(clat)), clon + (x - 400) * grados_px
+
+
+def etiqueta_auditoria_a_coord(z, clat, clon, px, py):
+    """Capturas sin escalar de 674x299: un pixel de imagen es un pixel de pantalla."""
+    grados_px = 360 / (256 * 2 ** z)
+    return clat - (py - CENTRO_AUDITORIA[1]) * grados_px * math.cos(math.radians(clat)), clon + (px - CENTRO_AUDITORIA[0]) * grados_px
 
 
 def dist_seg_m(p, a, b):
@@ -89,22 +99,37 @@ def partir_en_cruces(tramos):
     return piezas
 
 
+def tramo_cercano(p, tramos):
+    mejor, dist = None, 1e9
+    for t in tramos:
+        for a, b in zip(t["puntos"], t["puntos"][1:]):
+            d = dist_seg_m(p, a, b)
+            if d < dist:
+                mejor, dist = t, d
+    return mejor, dist
+
+
 def aplicar_etiquetas(tramos):
     fallidas = []
     with (RAIZ / "datos/etiquetas.csv").open(encoding="utf-8") as f:
         for fila in csv.DictReader(f):
             p = etiqueta_a_coord(int(fila["z"]), float(fila["clat"]), float(fila["clon"]),
                                  float(fila["x"]), float(fila["y"]))
-            mejor, dist = None, 1e9
-            for t in tramos:
-                for a, b in zip(t["puntos"], t["puntos"][1:]):
-                    d = dist_seg_m(p, a, b)
-                    if d < dist:
-                        mejor, dist = t, d
+            mejor, dist = tramo_cercano(p, tramos)
             if mejor is None or dist > DIST_SNAP_M:
                 fallidas.append((fila["nombre"], round(dist)))
             elif mejor["fuente"] != "google" or dist < mejor.get("dist", 1e9):
                 mejor.update(nombre=fila["nombre"], fuente="google", dist=dist)
+    # La auditoria se leyo con mas acercamiento: gana sobre la primera pasada.
+    with (RAIZ / "datos/etiquetas_auditoria.csv").open(encoding="utf-8") as f:
+        for fila in csv.DictReader(f):
+            p = etiqueta_auditoria_a_coord(float(fila["z"]), float(fila["clat"]), float(fila["clon"]),
+                                           float(fila["px"]), float(fila["py"]))
+            mejor, dist = tramo_cercano(p, tramos)
+            if mejor is None or dist > DIST_SNAP_AUDITORIA_M:
+                fallidas.append((fila["nombre"], round(dist)))
+            else:
+                mejor.update(nombre=fila["nombre"], fuente="google", dist=0)
     return fallidas
 
 
@@ -144,15 +169,19 @@ def propagar(tramos):
             t.update(nombre=n, fuente="inferido")
 
 
+def heredable(t):
+    return t["nombre"] and t["nombre"] != SIN_NOMBRE
+
+
 def nombre_heredado(t, por_nodo):
     ini, fin = t["puntos"][0], t["puntos"][-1]
-    comun = {v["nombre"] for v in por_nodo[ini] if v["nombre"]} & {v["nombre"] for v in por_nodo[fin] if v["nombre"]}
+    comun = {v["nombre"] for v in por_nodo[ini] if heredable(v)} & {v["nombre"] for v in por_nodo[fin] if heredable(v)}
     if comun:
         return sorted(comun)[0]
     mejor, menor = None, ANGULO_RECTO_MAX
     for extremo, sig in ((ini, t["puntos"][1]), (fin, t["puntos"][-2])):
         for v in por_nodo[extremo]:
-            if not v["nombre"] or v is t:
+            if not heredable(v) or v is t:
                 continue
             otro = v["puntos"][1] if v["puntos"][0] == extremo else v["puntos"][-2]
             giro = abs(math.degrees(rumbo(extremo, sig) - rumbo(otro, extremo)))
@@ -168,6 +197,10 @@ def main():
     fallidas = aplicar_etiquetas(tramos)
     nombrar_con_osm(tramos)
     propagar(tramos)
+    for t in tramos:
+        if t["nombre"] == SIN_NOMBRE:
+            t.update(nombre=None, fuente=None)
+    tramos = [t for t in tramos if t["id"] not in VIAS_AJENAS]
     tramos = [t for t in tramos if t["nombre"] or (largo_m(t) <= LARGO_MAX_SIN_NOMBRE_M and any(dentro(*p) for p in t["puntos"]))]
     salida = [{"id": t["id"], "n": t["nombre"], "f": t["fuente"],
                "a": base_osm(t["osm"]) if t["osm"] and base_osm(t["osm"]) != t["nombre"] else None,
