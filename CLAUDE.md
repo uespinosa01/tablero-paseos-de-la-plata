@@ -10,6 +10,6 @@ Responde siempre en español. Proyecto express: mapa para celular, sin internet,
 - `tools/prueba_logica.js`: pruebas de búsqueda y lectura de casas (`node tools/prueba_logica.js`).
 
 ## Reglas
-- Ninguna casa de un año pasado va en el código: las casas las agrega el usuario y viven en su celular (localStorage). El volante recibido fue solo un ejemplo.
+- Ninguna casa va en el código ni en el repo público: son domicilios de vecinos. Las casas viven en el celular (localStorage) y llegan por el cuadro de pegar o por un enlace privado `#casas=` (el fragmento no se envía al servidor). La lista vigente se guarda en `salida/`, que no se versiona.
 - Ningún mapa público trae números de casa: se ilumina la calle completa. No inventar posiciones.
 - Sin dependencias ni llamadas de red en la app.

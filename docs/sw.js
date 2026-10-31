@@ -1,5 +1,5 @@
 // Guarda la app al abrirla con internet para que funcione sin senal en la calle.
-const CACHE = "tablero-v1";
+const CACHE = "tablero-v2";
 const ARCHIVOS = ["./", "index.html", "manifest.webmanifest", "icono.svg"];
 
 self.addEventListener("install", (e) => {

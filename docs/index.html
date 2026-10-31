@@ -28,6 +28,9 @@ button { cursor: pointer; }
 #sugerencias:empty { display: none; }
 .chip { min-height: 40px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--via); background: var(--panel-2); }
 .aviso { color: var(--tenue); font-size: 14px; width: 100%; }
+#dias { display: flex; flex-wrap: wrap; gap: 6px; }
+#dias:empty { display: none; }
+.chip[aria-pressed="true"] { border-color: var(--globo); color: var(--globo); font-weight: 700; }
 
 #mapa { flex: 1; min-height: 0; position: relative; }
 svg { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; user-select: none; -webkit-user-select: none; display: block; }
@@ -110,13 +113,14 @@ h3 { margin: 0; font-size: 15px; }
 <section id="casas" hidden>
   <div id="casas-cab"><h2>Casas con dulces</h2><button class="cerrar" id="casas-cerrar" aria-label="Volver al mapa">×</button></div>
   <div id="casas-cuerpo">
+    <div id="dias" role="group" aria-label="Ver casas por día"></div>
+    <div id="lista"></div>
     <div style="display:grid;gap:8px">
       <h3>Pega lo que publiquen en el grupo</h3>
-      <textarea id="pegar" aria-label="Lista de casas" placeholder="Una casa por renglón:&#10;Jaspe #120, a partir de las 7:00 pm&#10;Granito #111, 5:00 pm"></textarea>
+      <textarea id="pegar" aria-label="Lista de casas" placeholder="Una casa por renglón; el día va en su propio renglón:&#10;Sábado 31&#10;Jaspe #120, 7:00 pm"></textarea>
       <button class="primario" id="btn-pegar">Agregar al mapa</button>
       <p class="nota" id="pegar-res"></p>
     </div>
-    <div id="lista"></div>
     <p class="nota">Se ilumina la calle completa: los números de casa no están en ningún mapa público, así que el número lo buscas ya en la calle. Tu lista se queda solo en este celular. Calles: © colaboradores de OpenStreetMap; nombres revisados contra Google Maps el 31-oct-2026.</p>
   </div>
 </section>
@@ -185,23 +189,51 @@ function leerCasa(linea, calles) {
     for (const p of palabras.filter((x) => x.length >= 5)) {
       for (const c of calles) {
         for (const k of [c.n, ...(c.a || [])].map(clave)) {
-          const d = distancia(p, k);
-          if (d < menor) { menor = d; calle = c.n; }
+          // "Mina de Mesillas" se compara tambien contra la palabra distintiva de "Mina la Mesilla".
+          for (const opcion of [k, ...k.split(" ").filter((x) => !GENERICAS.has(x))]) {
+            const d = distancia(p, opcion);
+            if (d < menor) { menor = d; calle = c.n; }
+          }
         }
       }
     }
   }
-  const num = limpia.match(/#\s*(\d+)/) || limpia.match(/\b(\d{2,4})\b(?!\s*:)/);
-  const hora = limpia.match(/(\d{1,2})(?::(\d{2}))?\s*(?:pm|p\.\s?m)/i);
+  const num = limpia.match(/#\s*(\d+)/) || limpia.replace(/\d{1,2}:\d{2}/g, " ").match(/\b(\d{2,4})\b/);
+  const hora = limpia.match(/(antes de las?\s+)?(\d{1,2})(?::(\d{2}))?\s*(?:pm|p\.\s?m)/i);
   return {
     calle,
     numero: num ? num[1] : "",
-    hora: hora ? `${hora[1]}:${hora[2] || "00"} pm` : "",
+    hora: hora ? `${hora[1] ? "antes de las " : ""}${hora[2]}:${hora[3] || "00"} pm` : "",
     texto: limpia,
   };
 }
 
-const LOGICA = { normalizar, clave, distancia, buscarCalles, leerCasa };
+const ENCABEZADO_DIA = /^(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\s+(\d{1,2})\s*:?$/i;
+const SIN_HORARIO = /^sin horario:\s*(.+)$/i;
+
+// Lee una lista completa: "Sabado 31" abre un dia y "Sin horario: 7:00 pm" da la hora de las casas que no traen una.
+function leerLista(texto, calles) {
+  let dia = "", horaGeneral = "";
+  const casas = [];
+  for (const linea of String(texto).split(/\r?\n/)) {
+    const limpia = linea.trim();
+    const encabezado = limpia.match(ENCABEZADO_DIA);
+    const general = limpia.match(SIN_HORARIO);
+    if (encabezado) dia = `${encabezado[1]} ${encabezado[2]}`;
+    else if (general) horaGeneral = general[1];
+    else {
+      const casa = leerCasa(limpia, calles);
+      if (casa) casas.push({ ...casa, dia, hora: casa.hora || horaGeneral });
+    }
+  }
+  return casas;
+}
+
+function diaDeHoy(dias, fecha) {
+  return dias.find((d) => Number(d.split(" ").pop()) === fecha.getDate()) || "";
+}
+
+const LOGICA = { normalizar, clave, distancia, buscarCalles, leerCasa, leerLista, diaDeHoy };
 if (typeof module !== "undefined") module.exports = LOGICA;
 </script>
 <script>
@@ -216,6 +248,13 @@ const svg = $("lienzo"), capa = $("capa");
 const vista = { k: 1, x: 0, y: 0 };
 let elegida = null, yo = null, vigilancia = null;
 let casas = cargarCasas();
+let filtroDia = diaDeHoy(diasDeCasas(), new Date());
+
+function diasDeCasas() {
+  return [...new Set(casas.map((c) => c.dia).filter(Boolean))];
+}
+// Una casa agregada a mano no tiene dia: se ve siempre.
+const casasVisibles = () => casas.filter((c) => !filtroDia || !c.dia || c.dia === filtroDia);
 
 function cargarCasas() {
   try { return JSON.parse(localStorage.getItem(CLAVE_CASAS)) || []; } catch { return []; }
@@ -378,7 +417,7 @@ function pintarFicha() {
   $("ficha-dato").textContent = datoFicha();
   const caja = $("ficha-casas");
   caja.textContent = "";
-  for (const c of casas.filter((x) => x.calle === elegida.n)) {
+  for (const c of casasVisibles().filter((x) => x.calle === elegida.n)) {
     const d = document.createElement("div");
     d.textContent = `${c.hecha ? "✓ " : ""}#${c.numero || "?"}${c.hora ? " · " + c.hora : ""}`;
     caja.appendChild(d);
@@ -457,30 +496,63 @@ $("ficha-form").addEventListener("submit", (e) => {
 $("btn-casas").onclick = () => { pintarCasas(); $("casas").hidden = false; };
 $("casas-cerrar").onclick = () => { $("casas").hidden = true; };
 $("btn-pegar").onclick = () => {
-  const lineas = $("pegar").value.split(/\n+/);
-  const leidas = lineas.map((l) => leerCasa(l, calles)).filter(Boolean);
-  agregarCasas(leidas);
-  const sin = leidas.filter((c) => !c.calle).length;
-  $("pegar-res").textContent = leidas.length ? `Agregué ${leidas.length}.${sin ? ` ${sin} sin calle en el mapa: quedan marcadas abajo.` : ""}` : "Escribe o pega al menos un renglón.";
+  importarLista($("pegar").value);
   $("pegar").value = "";
 };
+function importarLista(texto) {
+  const leidas = leerLista(texto, calles);
+  agregarCasas(leidas);
+  filtroDia = diaDeHoy(diasDeCasas(), new Date());
+  pintarCasas();
+  const sin = leidas.filter((c) => !c.calle).length;
+  $("pegar-res").textContent = leidas.length ? `Lista leída: ${leidas.length} renglones.${sin ? ` ${sin} sin calle en el mapa: quedan marcados abajo.` : ""}` : "Escribe o pega al menos un renglón.";
+}
+// La lista viaja despues del # del enlace: esa parte no se envia a ningun servidor.
+function importarDeEnlace() {
+  const m = location.hash.match(/^#casas=(.+)$/);
+  if (!m) return;
+  try {
+    importarLista(decodeURIComponent(m[1]));
+  } catch {
+    $("pegar-res").textContent = "El enlace llegó incompleto. Pega la lista aquí arriba.";
+  }
+  $("casas").hidden = false;
+  history.replaceState(null, "", location.pathname + location.search);
+}
+const llaveCasa = (c) => `${c.dia || ""}|${c.calle}|${c.numero || c.texto}`;
 function agregarCasas(nuevas) {
-  const ids = new Set(casas.map((c) => `${c.calle}|${c.numero}|${c.texto}`));
-  const unicas = nuevas.filter((c) => !ids.has(`${c.calle}|${c.numero}|${c.texto}`)).map((c, i) => ({ ...c, id: Date.now() + "-" + i, hecha: false }));
+  const ids = new Set(casas.map(llaveCasa));
+  const unicas = nuevas.filter((c) => !ids.has(llaveCasa(c))).map((c, i) => ({ ...c, id: Date.now() + "-" + i, hecha: false }));
   casas = [...casas, ...unicas];
   guardarCasas();
   pintarCasas();
 }
+function pintarDias() {
+  const caja = $("dias");
+  caja.textContent = "";
+  const dias = diasDeCasas();
+  if (!dias.length) return;
+  for (const [valor, rotulo] of [...dias.map((d) => [d, d]), ["", "Todas"]]) {
+    const b = document.createElement("button");
+    b.className = "chip";
+    b.textContent = rotulo;
+    b.setAttribute("aria-pressed", String(filtroDia === valor));
+    b.onclick = () => { filtroDia = valor; pintarCasas(); pintarFicha(); };
+    caja.appendChild(b);
+  }
+}
 function pintarCasas() {
-  $("btn-casas").textContent = `Casas con dulces (${casas.filter((c) => !c.hecha).length})`;
-  const conCasa = new Set(casas.filter((c) => !c.hecha && c.calle).map((c) => c.calle));
+  pintarDias();
+  const visibles = casasVisibles();
+  $("btn-casas").textContent = `Casas con dulces (${visibles.filter((c) => !c.hecha).length})`;
+  const conCasa = new Set(visibles.filter((c) => !c.hecha && c.calle).map((c) => c.calle));
   for (const c of calles) {
     c.linea.classList.toggle("con-casa", conCasa.has(c.n));
     c.rotulo.classList.toggle("con-casa", conCasa.has(c.n));
   }
   const lista = $("lista");
   lista.textContent = "";
-  const orden = casas.map((c) => ({ c, m: yo && c.calle ? cercano(porNombre.get(c.calle), yo).m : Infinity }))
+  const orden = visibles.map((c) => ({ c, m: yo && c.calle ? cercano(porNombre.get(c.calle), yo).m : Infinity }))
     .sort((a, b) => (a.c.hecha - b.c.hecha) || (a.m - b.m));
   for (const { c, m } of orden) lista.appendChild(filaCasa(c, m));
 }
@@ -499,7 +571,7 @@ function filaCasa(c, m) {
   nombre.textContent = c.calle ? `${c.calle}${c.numero ? " #" + c.numero : ""}` : c.texto;
   const meta = document.createElement("span");
   meta.className = "casa-meta" + (c.calle ? "" : " sin-calle");
-  meta.textContent = c.calle ? [Number.isFinite(m) ? `a ${redondear(m)} m` : "", c.texto].filter(Boolean).join(" · ") : "Esta calle no está en el mapa";
+  meta.textContent = c.calle ? [Number.isFinite(m) ? `a ${redondear(m)} m` : "", filtroDia ? "" : c.dia, c.hora, c.texto].filter(Boolean).join(" · ") : "Esta calle no está en el mapa";
   texto.append(nombre, meta);
   if (c.calle) texto.onclick = () => { $("casas").hidden = true; encender(c.calle, true); };
   const borrar = document.createElement("button");
@@ -513,6 +585,9 @@ function filaCasa(c, m) {
 
 dibujar();
 pintarCasas();
+importarDeEnlace();
+// Con la app ya abierta, el enlace solo cambia el # y la pagina no se recarga.
+window.addEventListener("hashchange", importarDeEnlace);
 function iniciar() {
   encuadrar([[[0, 0], [DATOS.ancho, DATOS.alto]]]);
 }

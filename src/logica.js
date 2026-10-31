@@ -62,21 +62,49 @@ function leerCasa(linea, calles) {
     for (const p of palabras.filter((x) => x.length >= 5)) {
       for (const c of calles) {
         for (const k of [c.n, ...(c.a || [])].map(clave)) {
-          const d = distancia(p, k);
-          if (d < menor) { menor = d; calle = c.n; }
+          // "Mina de Mesillas" se compara tambien contra la palabra distintiva de "Mina la Mesilla".
+          for (const opcion of [k, ...k.split(" ").filter((x) => !GENERICAS.has(x))]) {
+            const d = distancia(p, opcion);
+            if (d < menor) { menor = d; calle = c.n; }
+          }
         }
       }
     }
   }
-  const num = limpia.match(/#\s*(\d+)/) || limpia.match(/\b(\d{2,4})\b(?!\s*:)/);
-  const hora = limpia.match(/(\d{1,2})(?::(\d{2}))?\s*(?:pm|p\.\s?m)/i);
+  const num = limpia.match(/#\s*(\d+)/) || limpia.replace(/\d{1,2}:\d{2}/g, " ").match(/\b(\d{2,4})\b/);
+  const hora = limpia.match(/(antes de las?\s+)?(\d{1,2})(?::(\d{2}))?\s*(?:pm|p\.\s?m)/i);
   return {
     calle,
     numero: num ? num[1] : "",
-    hora: hora ? `${hora[1]}:${hora[2] || "00"} pm` : "",
+    hora: hora ? `${hora[1] ? "antes de las " : ""}${hora[2]}:${hora[3] || "00"} pm` : "",
     texto: limpia,
   };
 }
 
-const LOGICA = { normalizar, clave, distancia, buscarCalles, leerCasa };
+const ENCABEZADO_DIA = /^(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\s+(\d{1,2})\s*:?$/i;
+const SIN_HORARIO = /^sin horario:\s*(.+)$/i;
+
+// Lee una lista completa: "Sabado 31" abre un dia y "Sin horario: 7:00 pm" da la hora de las casas que no traen una.
+function leerLista(texto, calles) {
+  let dia = "", horaGeneral = "";
+  const casas = [];
+  for (const linea of String(texto).split(/\r?\n/)) {
+    const limpia = linea.trim();
+    const encabezado = limpia.match(ENCABEZADO_DIA);
+    const general = limpia.match(SIN_HORARIO);
+    if (encabezado) dia = `${encabezado[1]} ${encabezado[2]}`;
+    else if (general) horaGeneral = general[1];
+    else {
+      const casa = leerCasa(limpia, calles);
+      if (casa) casas.push({ ...casa, dia, hora: casa.hora || horaGeneral });
+    }
+  }
+  return casas;
+}
+
+function diaDeHoy(dias, fecha) {
+  return dias.find((d) => Number(d.split(" ").pop()) === fecha.getDate()) || "";
+}
+
+const LOGICA = { normalizar, clave, distancia, buscarCalles, leerCasa, leerLista, diaDeHoy };
 if (typeof module !== "undefined") module.exports = LOGICA;
