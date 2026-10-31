@@ -1,0 +1,13 @@
+{
+  "name": "Tablero Paseos de la Plata",
+  "short_name": "Tablero",
+  "lang": "es",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#15131d",
+  "theme_color": "#211d2c",
+  "icons": [
+    { "src": "icono.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

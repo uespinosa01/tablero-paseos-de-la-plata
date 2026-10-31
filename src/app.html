@@ -1,0 +1,435 @@
+<title>Tablero Paseos de la Plata</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Tablero de control de metro de noche: vias apagadas, la buscada se enciende. Una sola apariencia oscura a proposito. */
+:root {
+  color-scheme: dark;
+  --tablero: #15131d; --panel: #211d2c; --panel-2: #2c2739; --via: #5a546c; --texto: #f1edf7; --tenue: #a79fb8;
+  --lampara: #ffd84d; --globo: #ff8426; --gps: #52d6f4; --hecho: #6f8f76;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+html, body { height: 100%; overflow: hidden; }
+body { background: var(--tablero); color: var(--texto); font: 16px/1.35 var(--ui); display: flex; flex-direction: column; }
+button, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--lampara); outline-offset: 2px; }
+
+#barra { padding: 10px max(16px, env(safe-area-inset-right, 0px)) 8px max(16px, env(safe-area-inset-left, 0px)); background: var(--panel); position: relative; z-index: 3; }
+#busca { width: 100%; box-sizing: border-box; height: 48px; padding: 0 14px; font-size: 18px; border: 1px solid var(--via); border-radius: 8px; background: var(--tablero); }
+#busca::placeholder { color: var(--tenue); }
+#sugerencias { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 8px; max-height: 30vh; overflow-y: auto; }
+#sugerencias:empty { display: none; }
+.chip { min-height: 40px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--via); background: var(--panel-2); }
+.aviso { color: var(--tenue); font-size: 14px; width: 100%; }
+
+#mapa { flex: 1; min-height: 0; position: relative; }
+svg { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; user-select: none; -webkit-user-select: none; display: block; }
+.via { fill: none; stroke: var(--via); stroke-width: 1.6; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
+.toque { fill: none; stroke: transparent; stroke-width: 16; vector-effect: non-scaling-stroke; }
+.via.con-casa { stroke: var(--globo); stroke-width: 3; }
+.via.encendida { stroke: var(--lampara); stroke-width: 5; filter: drop-shadow(0 0 5px var(--lampara)); animation: late 1.4s ease-in-out infinite; }
+@keyframes late { 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .via.encendida { animation: none; } }
+.rotulo { fill: var(--tenue); font-family: var(--mono); text-anchor: middle; dominant-baseline: central; paint-order: stroke; stroke: var(--tablero); stroke-width: .25em; pointer-events: none; display: none; }
+.ver-rotulos .rotulo { display: block; }
+.rotulo.con-casa { display: block; fill: var(--globo); }
+.rotulo.encendida { display: block; fill: var(--lampara); font-weight: 700; font-size: 1.35em; }
+#yo { fill: var(--gps); stroke: #fff; vector-effect: non-scaling-stroke; stroke-width: 2; }
+#yo-halo { fill: var(--gps); opacity: .22; }
+
+#ficha { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; background: var(--panel); padding: 12px max(16px, env(safe-area-inset-right, 0px)) 12px max(16px, env(safe-area-inset-left, 0px)); display: grid; gap: 8px; }
+#ficha h2 { margin: 0; font: 700 22px/1.15 var(--ui); color: var(--lampara); }
+#ficha-cab { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+#ficha-dato { color: var(--tenue); font-size: 14px; font-variant-numeric: tabular-nums; }
+#ficha-casas { display: grid; gap: 4px; font-size: 15px; }
+.fila-accion { display: flex; gap: 8px; }
+.fila-accion input { flex: 1; min-width: 0; height: 44px; padding: 0 10px; border: 1px solid var(--via); border-radius: 6px; background: var(--tablero); }
+.cerrar { width: 40px; height: 40px; flex: none; border: 0; border-radius: 6px; background: var(--panel-2); font-size: 20px; }
+.primario { min-height: 44px; padding: 0 14px; border: 0; border-radius: 6px; background: var(--globo); color: #231204; font-weight: 700; }
+
+#pie { display: flex; gap: 8px; padding: 8px max(16px, env(safe-area-inset-right, 0px)) 8px max(16px, env(safe-area-inset-left, 0px)); background: var(--panel); position: relative; z-index: 3; }
+#pie button { flex: 1; min-height: 48px; border: 1px solid var(--via); border-radius: 8px; background: var(--panel-2); }
+#btn-gps.activo { border-color: var(--gps); color: var(--gps); }
+#estado-gps { position: absolute; left: 50%; transform: translateX(-50%); top: 8px; z-index: 2; background: var(--panel); padding: 6px 10px; border-radius: 6px; font-size: 13px; color: var(--tenue); max-width: 90%; text-align: center; }
+#zoom { position: absolute; right: max(12px, env(safe-area-inset-right, 0px)); top: 12px; display: grid; gap: 6px; z-index: 1; }
+#zoom button { width: 44px; height: 44px; border: 1px solid var(--via); border-radius: 8px; background: var(--panel); font-size: 22px; }
+
+#casas { position: fixed; inset: 0; z-index: 5; background: var(--tablero); display: flex; flex-direction: column; padding-top: env(safe-area-inset-top, 0px); }
+#casas-cab { display: flex; justify-content: space-between; align-items: center; padding: 12px max(16px, env(safe-area-inset-right, 0px)) 12px max(16px, env(safe-area-inset-left, 0px)); background: var(--panel); }
+#casas-cab h2 { margin: 0; font-size: 20px; }
+#casas-cuerpo { flex: 1; overflow-y: auto; padding-block: 12px 24px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 14px; align-content: start; }
+#pegar { width: 100%; box-sizing: border-box; min-height: 110px; padding: 10px; border: 1px solid var(--via); border-radius: 6px; background: var(--panel); }
+.casa { display: grid; grid-template-columns: 44px 1fr auto; gap: 10px; align-items: center; padding-block: 8px; border-bottom: 1px solid var(--panel-2); }
+.casa-marca { width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--globo); background: transparent; color: var(--texto); }
+.casa.hecha .casa-marca { background: var(--hecho); border-color: var(--hecho); }
+.casa.hecha .casa-nombre { color: var(--tenue); text-decoration: line-through; }
+.casa-texto { min-width: 0; text-align: left; background: none; border: 0; padding: 0; }
+.casa-nombre { font-weight: 600; display: block; }
+.casa-meta { color: var(--tenue); font-size: 13px; display: block; overflow-wrap: anywhere; }
+.casa-meta.sin-calle { color: var(--globo); }
+.borrar { width: 40px; height: 40px; border: 0; border-radius: 6px; background: var(--panel-2); }
+.nota { color: var(--tenue); font-size: 13px; margin: 0; }
+h3 { margin: 0; font-size: 15px; }
+</style>
+
+<div id="barra">
+  <input id="busca" type="search" placeholder="Buscar calle: carbón, jaspe, perla…" aria-label="Buscar calle" autocomplete="off" autocorrect="off" spellcheck="false">
+  <div id="sugerencias"></div>
+</div>
+<div id="mapa">
+  <svg id="lienzo" aria-label="Mapa de calles de Paseos de la Plata"><g id="capa"></g></svg>
+  <div id="estado-gps" hidden></div>
+  <div id="zoom">
+    <button id="mas" aria-label="Acercar">+</button>
+    <button id="menos" aria-label="Alejar">−</button>
+  </div>
+  <section id="ficha" hidden>
+    <div id="ficha-cab">
+      <div><h2 id="ficha-nombre"></h2><div id="ficha-dato"></div></div>
+      <button class="cerrar" id="ficha-cerrar" aria-label="Apagar calle">×</button>
+    </div>
+    <div id="ficha-casas"></div>
+    <form class="fila-accion" id="ficha-form">
+      <input id="ficha-num" inputmode="numeric" placeholder="Número de casa con dulces" aria-label="Número de casa">
+      <button class="primario">Agregar</button>
+    </form>
+  </section>
+</div>
+<div id="pie">
+  <button id="btn-gps">Dónde estoy</button>
+  <button id="btn-casas">Casas con dulces (0)</button>
+</div>
+
+<section id="casas" hidden>
+  <div id="casas-cab"><h2>Casas con dulces</h2><button class="cerrar" id="casas-cerrar" aria-label="Volver al mapa">×</button></div>
+  <div id="casas-cuerpo">
+    <div style="display:grid;gap:8px">
+      <h3>Pega lo que publiquen en el grupo</h3>
+      <textarea id="pegar" aria-label="Lista de casas" placeholder="Una casa por renglón:&#10;Jaspe #120, a partir de las 7:00 pm&#10;Granito #111, 5:00 pm"></textarea>
+      <button class="primario" id="btn-pegar">Agregar al mapa</button>
+      <p class="nota" id="pegar-res"></p>
+    </div>
+    <div id="lista"></div>
+    <p class="nota">Se ilumina la calle completa: los números de casa no están en ningún mapa público, así que el número lo buscas ya en la calle. Tu lista se queda solo en este celular. Calles: © colaboradores de OpenStreetMap; nombres revisados contra Google Maps el 31-oct-2026.</p>
+  </div>
+</section>
+
+<script>/*__LOGICA__*/</script>
+<script>
+const DATOS = /*__DATOS__*/null;
+const $ = (id) => document.getElementById(id);
+const NS = "http://www.w3.org/2000/svg";
+const CLAVE_CASAS = "tablero-casas-v1";
+const ZOOM_ROTULOS = 1.15, ZOOM_MAX = 8, ZOOM_ENCUADRE = 1.3, MARGEN_PX = 40;
+const calles = Object.entries(DATOS.calles).map(([n, c]) => ({ n, a: c.a, s: c.s }));
+const porNombre = new Map(calles.map((c) => [c.n, c]));
+const svg = $("lienzo"), capa = $("capa");
+const vista = { k: 1, x: 0, y: 0 };
+let elegida = null, yo = null, vigilancia = null;
+let casas = cargarCasas();
+
+function cargarCasas() {
+  try { return JSON.parse(localStorage.getItem(CLAVE_CASAS)) || []; } catch { return []; }
+}
+function guardarCasas() {
+  try { localStorage.setItem(CLAVE_CASAS, JSON.stringify(casas)); } catch { /* sin almacenamiento: la lista dura mientras la pagina siga abierta */ }
+}
+function nodo(tag, attrs, padre) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (padre) padre.appendChild(e);
+  return e;
+}
+const trazo = (piezas) => piezas.map((p) => "M" + p.map((c) => c.join(" ")).join("L")).join("");
+
+function dibujar() {
+  nodo("path", { class: "via", d: trazo(DATOS.sinNombre) }, capa);
+  for (const c of calles) {
+    c.linea = nodo("path", { class: "via", d: trazo(c.s) }, capa);
+    const larga = c.s.reduce((m, p) => (largo(p) > largo(m) ? p : m));
+    const a = larga[Math.floor((larga.length - 1) / 2)], b = larga[Math.floor((larga.length - 1) / 2) + 1] || a;
+    let ang = Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI;
+    if (ang > 90) ang -= 180; else if (ang < -90) ang += 180;
+    c.rotulo = nodo("text", { class: "rotulo", transform: `translate(${(a[0] + b[0]) / 2} ${(a[1] + b[1]) / 2}) rotate(${ang})` }, capa);
+    c.rotulo.textContent = c.n;
+  }
+  for (const c of calles) nodo("path", { class: "toque", d: trazo(c.s), "data-n": c.n }, capa);
+  const g = nodo("g", { id: "gps", visibility: "hidden" }, capa);
+  nodo("circle", { id: "yo-halo", r: 30 }, g);
+  nodo("circle", { id: "yo", r: 5 }, g);
+}
+function largo(p) {
+  let t = 0;
+  for (let i = 1; i < p.length; i++) t += Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]);
+  return t;
+}
+
+function aplicarVista() {
+  capa.setAttribute("transform", `translate(${vista.x} ${vista.y}) scale(${vista.k})`);
+  capa.style.fontSize = (11 / vista.k) + "px";
+  capa.classList.toggle("ver-rotulos", vista.k >= ZOOM_ROTULOS);
+  const r = $("yo");
+  r.setAttribute("r", 7 / vista.k);
+}
+function encuadrar(piezas, abajoPx) {
+  const pts = piezas.flat();
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const W = svg.clientWidth, H = svg.clientHeight - (abajoPx || 0);
+  const k = Math.min(ZOOM_ENCUADRE, (W - MARGEN_PX * 2) / Math.max(x1 - x0, 1), (H - MARGEN_PX * 2) / Math.max(y1 - y0, 1));
+  vista.k = k;
+  vista.x = W / 2 - k * (x0 + x1) / 2;
+  vista.y = H / 2 - k * (y0 + y1) / 2;
+  aplicarVista();
+}
+function zoomEn(px, py, f) {
+  const k = Math.max(minZoom(), Math.min(ZOOM_MAX, vista.k * f));
+  vista.x = px - (px - vista.x) * k / vista.k;
+  vista.y = py - (py - vista.y) * k / vista.k;
+  vista.k = k;
+  aplicarVista();
+}
+const minZoom = () => Math.min(svg.clientWidth / DATOS.ancho, svg.clientHeight / DATOS.alto) * 0.6;
+
+// Arrastrar y pellizcar
+const dedos = new Map();
+let movido = 0, inicio = null;
+svg.addEventListener("pointerdown", (e) => {
+  dedos.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (dedos.size === 1) { movido = 0; inicio = { x: e.clientX, y: e.clientY }; }
+});
+svg.addEventListener("pointermove", (e) => {
+  const prev = dedos.get(e.pointerId);
+  if (!prev) return;
+  const caja = svg.getBoundingClientRect();
+  if (dedos.size === 1) {
+    vista.x += e.clientX - prev.x;
+    vista.y += e.clientY - prev.y;
+    movido += Math.hypot(e.clientX - prev.x, e.clientY - prev.y);
+    aplicarVista();
+  } else if (dedos.size === 2) {
+    const otro = [...dedos.entries()].find(([id]) => id !== e.pointerId)[1];
+    const antes = Math.hypot(prev.x - otro.x, prev.y - otro.y);
+    const ahora = Math.hypot(e.clientX - otro.x, e.clientY - otro.y);
+    if (antes > 0) zoomEn((e.clientX + otro.x) / 2 - caja.left, (e.clientY + otro.y) / 2 - caja.top, ahora / antes);
+    movido += 100;
+  }
+  dedos.set(e.pointerId, { x: e.clientX, y: e.clientY });
+});
+function soltar(e) {
+  const eraUno = dedos.size === 1;
+  dedos.delete(e.pointerId);
+  if (e.type === "pointerup" && eraUno && movido < 8) {
+    const n = document.elementFromPoint(e.clientX, e.clientY)?.dataset?.n;
+    if (n) encender(n, false);
+  }
+}
+svg.addEventListener("pointerup", soltar);
+svg.addEventListener("pointercancel", soltar);
+svg.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const caja = svg.getBoundingClientRect();
+  zoomEn(e.clientX - caja.left, e.clientY - caja.top, e.deltaY < 0 ? 1.2 : 1 / 1.2);
+}, { passive: false });
+$("mas").onclick = () => zoomEn(svg.clientWidth / 2, svg.clientHeight / 2, 1.5);
+$("menos").onclick = () => zoomEn(svg.clientWidth / 2, svg.clientHeight / 2, 1 / 1.5);
+
+// Buscar
+$("busca").addEventListener("input", () => pintarSugerencias($("busca").value));
+$("busca").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  const r = buscarCalles($("busca").value, calles);
+  const lista = r.exactas.length ? r.exactas : r.parecidas;
+  if (lista.length) encender(lista[0].n, true);
+});
+function pintarSugerencias(q) {
+  const caja = $("sugerencias");
+  caja.textContent = "";
+  if (!q.trim()) return;
+  const r = buscarCalles(q, calles);
+  if (!r.exactas.length) {
+    const aviso = document.createElement("div");
+    aviso.className = "aviso";
+    aviso.textContent = r.parecidas.length ? "No la encontré tal cual. ¿Será alguna de estas?" : `“${q}” no está en este mapa. Puede faltar un nombre: pregunta en el grupo por qué calle queda cerca.`;
+    caja.appendChild(aviso);
+  }
+  for (const c of (r.exactas.length ? r.exactas : r.parecidas).slice(0, 12)) {
+    const b = document.createElement("button");
+    b.className = "chip";
+    b.textContent = c.n;
+    b.onclick = () => encender(c.n, true);
+    caja.appendChild(b);
+  }
+}
+function encender(nombre, centrar) {
+  if (elegida) { elegida.linea.classList.remove("encendida"); elegida.rotulo.classList.remove("encendida"); }
+  elegida = porNombre.get(nombre);
+  if (!elegida) return;
+  elegida.linea.classList.add("encendida");
+  elegida.rotulo.classList.add("encendida");
+  capa.insertBefore(elegida.linea, capa.querySelector(".toque"));
+  $("busca").value = "";
+  $("sugerencias").textContent = "";
+  $("busca").blur();
+  pintarFicha();
+  if (centrar) requestAnimationFrame(() => encuadrar(yo ? [...elegida.s, [yo]] : elegida.s, $("ficha").offsetHeight));
+}
+function apagar() {
+  if (elegida) { elegida.linea.classList.remove("encendida"); elegida.rotulo.classList.remove("encendida"); }
+  elegida = null;
+  $("ficha").hidden = true;
+}
+$("ficha-cerrar").onclick = apagar;
+
+function pintarFicha() {
+  if (!elegida) return;
+  $("ficha").hidden = false;
+  $("ficha-nombre").textContent = elegida.n;
+  $("ficha-dato").textContent = datoFicha();
+  const caja = $("ficha-casas");
+  caja.textContent = "";
+  for (const c of casas.filter((x) => x.calle === elegida.n)) {
+    const d = document.createElement("div");
+    d.textContent = `${c.hecha ? "✓ " : ""}#${c.numero || "?"}${c.hora ? " · " + c.hora : ""}`;
+    caja.appendChild(d);
+  }
+}
+function datoFicha() {
+  const otros = elegida.a && elegida.a.length ? `También aparece como ${elegida.a.join(", ")}. ` : "";
+  if (!yo) return otros + "Toca “Dónde estoy” para ver qué tan lejos queda.";
+  const d = cercano(elegida, yo);
+  return otros + (d.m < 25 ? "Ya estás en esta calle." : `A ${redondear(d.m)} m en línea recta, hacia el ${rumbo(yo, d.p)}.`);
+}
+const redondear = (m) => Math.round(m / 10) * 10;
+function cercano(c, punto) {
+  let mejor = { m: Infinity, p: null };
+  for (const pieza of c.s) {
+    for (let i = 0; i < pieza.length - 1; i++) {
+      const [ax, ay] = pieza[i], [bx, by] = pieza[i + 1];
+      const dx = bx - ax, dy = by - ay;
+      const t = dx === 0 && dy === 0 ? 0 : Math.max(0, Math.min(1, ((punto[0] - ax) * dx + (punto[1] - ay) * dy) / (dx * dx + dy * dy)));
+      const p = [ax + t * dx, ay + t * dy];
+      const m = Math.hypot(p[0] - punto[0], p[1] - punto[1]);
+      if (m < mejor.m) mejor = { m, p };
+    }
+  }
+  return mejor;
+}
+function rumbo(a, b) {
+  const g = (Math.atan2(b[0] - a[0], a[1] - b[1]) * 180 / Math.PI + 360) % 360;
+  return ["norte", "noreste", "este", "sureste", "sur", "suroeste", "oeste", "noroeste"][Math.round(g / 45) % 8];
+}
+
+// GPS: funciona sin internet
+$("btn-gps").onclick = () => {
+  if (yo) { centrarEnMi(); return; }
+  if (!navigator.geolocation) { avisoGps("Este celular no permite usar la ubicación aquí."); return; }
+  avisoGps("Buscando señal de GPS…");
+  $("btn-gps").classList.add("activo");
+  vigilancia = navigator.geolocation.watchPosition((pos) => {
+    const primera = !yo;
+    yo = [(pos.coords.longitude - DATOS.oeste) * DATOS.kx, (DATOS.norte - pos.coords.latitude) * DATOS.ky];
+    const g = $("gps");
+    g.setAttribute("visibility", "visible");
+    g.setAttribute("transform", `translate(${yo[0]} ${yo[1]})`);
+    $("yo-halo").setAttribute("r", Math.min(pos.coords.accuracy || 30, 80));
+    const lejos = yo[0] < -300 || yo[1] < -300 || yo[0] > DATOS.ancho + 300 || yo[1] > DATOS.alto + 300;
+    avisoGps(lejos ? "Estás fuera del fraccionamiento." : "");
+    if (primera && !lejos) centrarEnMi();
+    pintarFicha();
+    pintarCasas();
+  }, (err) => {
+    $("btn-gps").classList.remove("activo");
+    avisoGps(err.code === 1 ? "Falta dar permiso de ubicación a esta página en el celular." : "No hay señal de GPS todavía. Sal a cielo abierto e inténtalo de nuevo.");
+  }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 });
+};
+function avisoGps(t) {
+  $("estado-gps").hidden = !t;
+  $("estado-gps").textContent = t;
+}
+function centrarEnMi() {
+  const k = Math.max(vista.k, 1.6);
+  vista.k = k;
+  vista.x = svg.clientWidth / 2 - k * yo[0];
+  vista.y = svg.clientHeight / 2 - k * yo[1];
+  aplicarVista();
+}
+
+// Casas
+$("ficha-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (!elegida) return;
+  const numero = $("ficha-num").value.trim();
+  agregarCasas([{ calle: elegida.n, numero, hora: "", texto: `${elegida.n} ${numero}`.trim() }]);
+  $("ficha-num").value = "";
+  pintarFicha();
+});
+$("btn-casas").onclick = () => { pintarCasas(); $("casas").hidden = false; };
+$("casas-cerrar").onclick = () => { $("casas").hidden = true; };
+$("btn-pegar").onclick = () => {
+  const lineas = $("pegar").value.split(/\n+/);
+  const leidas = lineas.map((l) => leerCasa(l, calles)).filter(Boolean);
+  agregarCasas(leidas);
+  const sin = leidas.filter((c) => !c.calle).length;
+  $("pegar-res").textContent = leidas.length ? `Agregué ${leidas.length}.${sin ? ` ${sin} sin calle en el mapa: quedan marcadas abajo.` : ""}` : "Escribe o pega al menos un renglón.";
+  $("pegar").value = "";
+};
+function agregarCasas(nuevas) {
+  const ids = new Set(casas.map((c) => `${c.calle}|${c.numero}|${c.texto}`));
+  const unicas = nuevas.filter((c) => !ids.has(`${c.calle}|${c.numero}|${c.texto}`)).map((c, i) => ({ ...c, id: Date.now() + "-" + i, hecha: false }));
+  casas = [...casas, ...unicas];
+  guardarCasas();
+  pintarCasas();
+}
+function pintarCasas() {
+  $("btn-casas").textContent = `Casas con dulces (${casas.filter((c) => !c.hecha).length})`;
+  const conCasa = new Set(casas.filter((c) => !c.hecha && c.calle).map((c) => c.calle));
+  for (const c of calles) {
+    c.linea.classList.toggle("con-casa", conCasa.has(c.n));
+    c.rotulo.classList.toggle("con-casa", conCasa.has(c.n));
+  }
+  const lista = $("lista");
+  lista.textContent = "";
+  const orden = casas.map((c) => ({ c, m: yo && c.calle ? cercano(porNombre.get(c.calle), yo).m : Infinity }))
+    .sort((a, b) => (a.c.hecha - b.c.hecha) || (a.m - b.m));
+  for (const { c, m } of orden) lista.appendChild(filaCasa(c, m));
+}
+function filaCasa(c, m) {
+  const fila = document.createElement("div");
+  fila.className = "casa" + (c.hecha ? " hecha" : "");
+  const marca = document.createElement("button");
+  marca.className = "casa-marca";
+  marca.setAttribute("aria-label", c.hecha ? "Marcar como pendiente" : "Marcar como visitada");
+  marca.textContent = c.hecha ? "✓" : "";
+  marca.onclick = () => { casas = casas.map((x) => (x.id === c.id ? { ...x, hecha: !x.hecha } : x)); guardarCasas(); pintarCasas(); };
+  const texto = document.createElement("button");
+  texto.className = "casa-texto";
+  const nombre = document.createElement("span");
+  nombre.className = "casa-nombre";
+  nombre.textContent = c.calle ? `${c.calle}${c.numero ? " #" + c.numero : ""}` : c.texto;
+  const meta = document.createElement("span");
+  meta.className = "casa-meta" + (c.calle ? "" : " sin-calle");
+  meta.textContent = c.calle ? [Number.isFinite(m) ? `a ${redondear(m)} m` : "", c.texto].filter(Boolean).join(" · ") : "Esta calle no está en el mapa";
+  texto.append(nombre, meta);
+  if (c.calle) texto.onclick = () => { $("casas").hidden = true; encender(c.calle, true); };
+  const borrar = document.createElement("button");
+  borrar.className = "borrar";
+  borrar.setAttribute("aria-label", "Quitar de la lista");
+  borrar.textContent = "×";
+  borrar.onclick = () => { casas = casas.filter((x) => x.id !== c.id); guardarCasas(); pintarCasas(); };
+  fila.append(marca, texto, borrar);
+  return fila;
+}
+
+dibujar();
+pintarCasas();
+function iniciar() {
+  encuadrar([[[0, 0], [DATOS.ancho, DATOS.alto]]]);
+}
+iniciar();
+window.addEventListener("resize", () => { if (!elegida && !yo) iniciar(); });
+if ("serviceWorker" in navigator && location.protocol === "https:") {
+  navigator.serviceWorker.register("sw.js").catch(() => { /* en vistas sin service worker la app sigue funcionando en linea */ });
+}
+</script>
