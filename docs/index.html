@@ -265,7 +265,8 @@ function encuadrar(piezas, abajoPx) {
   const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
   const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
   const W = svg.clientWidth, H = svg.clientHeight - (abajoPx || 0);
-  const k = Math.min(ZOOM_ENCUADRE, (W - MARGEN_PX * 2) / Math.max(x1 - x0, 1), (H - MARGEN_PX * 2) / Math.max(y1 - y0, 1));
+  // En pantallas bajas el margen puede superar al alto: el piso evita un zoom negativo que borra el mapa.
+  const k = Math.max(minZoom(), Math.min(ZOOM_ENCUADRE, (W - MARGEN_PX * 2) / Math.max(x1 - x0, 1), (H - MARGEN_PX * 2) / Math.max(y1 - y0, 1)));
   vista.k = k;
   vista.x = W / 2 - k * (x0 + x1) / 2;
   vista.y = H / 2 - k * (y0 + y1) / 2;
