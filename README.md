@@ -1,5 +1,7 @@
 # Tablero Paseos de la Plata
 
+**[Abrir el mapa](https://uespinosa01.github.io/tablero-paseos-de-la-plata/)**
+
 Mapa para celular de las calles del fraccionamiento Paseos de la Plata. Buscas una calle y se enciende, como en un tablero de control de metro. Funciona sin internet una vez abierto.
 
 Las casas que agregues se guardan solo en tu celular: nada se envía a ningún servidor.
